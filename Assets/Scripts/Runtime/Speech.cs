@@ -1,4 +1,7 @@
 using UnityEngine;
+#if UNITY_WEBGL && !UNITY_EDITOR
+using System.Runtime.InteropServices;
+#endif
 
 namespace WordGarden
 {
@@ -6,11 +9,17 @@ namespace WordGarden
     // In the Editor the spoken word is shown as a readable fallback.
     public sealed class Speech
     {
+#if UNITY_WEBGL && !UNITY_EDITOR
+        [DllImport("__Internal")] private static extern int WG_Speak(string words);
+#endif
         private AndroidJavaObject engine;
         private bool attempted;
         public bool Speak(string words)
         {
-#if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_WEBGL && !UNITY_EDITOR
+            try { return WG_Speak(words) != 0; }
+            catch (System.Exception ex) { Debug.LogWarning("Browser speech unavailable: " + ex.Message); return false; }
+#elif UNITY_ANDROID && !UNITY_EDITOR
             try
             {
                 if (!attempted)

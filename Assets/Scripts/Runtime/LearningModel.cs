@@ -25,14 +25,15 @@ namespace WordGarden
     public static class Curriculum
     {
         public static readonly Challenge[] All = {
-            new Challenge("w-cat", "01 • חיות", TaskKind.Picture, "הקש על המילה שמתאימה לציור", "מה רואים כאן?", "cat", "cat", "cat", "cat", "dog", "sun"),
-            new Challenge("w-dog", "01 • חיות", TaskKind.Picture, "הקש על המילה שמתאימה לציור", "מה רואים כאן?", "dog", "dog", "dog", "dog", "cat", "red"),
-            new Challenge("w-sun", "02 • סביבנו", TaskKind.Picture, "הקש על המילה שמתאימה לציור", "מה רואים כאן?", "sun", "sun", "sun", "sun", "dog", "cat"),
-            new Challenge("l-cat", "02 • סביבנו", TaskKind.Listen, "הקש על 🔊 ואז בחר את מה ששמעת", "מה שמעת?", "", "cat", "cat", "cat", "dog", "sun"),
-            new Challenge("l-dog", "02 • סביבנו", TaskKind.Listen, "הקש על 🔊 ואז בחר את מה ששמעת", "מה שמעת?", "", "dog", "dog", "dog", "cat", "sun"),
-            new Challenge("s-cat", "03 • משפט ראשון", TaskKind.Sentence, "סדר את המילים למשפט", "החתול קטן", "cat", "The cat is small.", "The cat is small", "The", "cat", "is", "small."),
-            new Challenge("s-dog", "03 • משפט ראשון", TaskKind.Sentence, "סדר את המילים למשפט", "הכלב אדום", "dog", "The dog is red.", "The dog is red", "The", "dog", "is", "red."),
-            new Challenge("r-sun", "04 • חזרה חכמה", TaskKind.Picture, "הקש על המילה שמתאימה לציור", "מה רואים כאן?", "sun", "sun", "sun", "sun", "cat", "dog"),
+            new Challenge("w-cat", "01 • חיות", TaskKind.Picture, "בחרו את המילה שמתאימה לתמונה", "מי פגשנו בגינה?", "cat", "cat", "cat", "dog", "cat", "fox"),
+            new Challenge("w-dog", "01 • חיות", TaskKind.Picture, "בחרו את המילה שמתאימה לתמונה", "מי פגשנו בגינה?", "dog", "dog", "dog", "fox", "cat", "dog"),
+            new Challenge("w-fox", "01 • חיות", TaskKind.Picture, "בחרו את המילה שמתאימה לתמונה", "מי מדריך אותנו בגינה?", "fox", "fox", "fox", "cat", "dog", "fox"),
+            new Challenge("w-sun", "02 • סביבנו", TaskKind.Picture, "בחרו מה מאיר את שביל הגינה", "מה מופיע בתמונה?", "sun", "sun", "sun", "moon", "sun", "star"),
+            new Challenge("l-cat", "03 • מקשיבים", TaskKind.Listen, "לחצו על הקש לשמוע ובחרו את החיה", "איזו חיה שמעתם?", "", "cat", "cat", "fox", "dog", "cat"),
+            new Challenge("l-dog", "03 • מקשיבים", TaskKind.Listen, "לחצו על הקש לשמוע ובחרו את החיה", "איזו חיה שמעתם?", "", "dog", "dog", "cat", "fox", "dog"),
+            new Challenge("s-cat", "04 • משפט ראשון", TaskKind.Sentence, "סדרו את המילים למשפט", "החתול קטן", "cat", "The cat is small.", "The cat is small", "The", "cat", "is", "small."),
+            new Challenge("s-dog", "04 • משפט ראשון", TaskKind.Sentence, "סדרו את המילים למשפט", "הכלב שמח", "dog", "The dog is happy.", "The dog is happy", "The", "dog", "is", "happy."),
+            new Challenge("r-sun", "05 • חוזרים לגינה", TaskKind.Picture, "בוחרים שוב, כבר מכירים את השמש", "מה מאיר את הגינה?", "sun", "sun", "sun", "star", "moon", "sun"),
         };
     }
 

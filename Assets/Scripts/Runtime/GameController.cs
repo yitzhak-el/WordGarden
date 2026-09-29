@@ -12,7 +12,7 @@ namespace WordGarden
             Sky=Hex("#B6E9EE"), Plum=Hex("#645C96"), Yellow=Hex("#FFD56F"), Red=Hex("#F58D81");
         Canvas canvas; RectTransform root; Font font; LearningEngine learning; DuelState duel;
         Speech speech = new Speech(); bool versus; int feedback; string feedbackText;
-        float feedbackUntil; Challenge current; bool walking; Vector2 walkPosition; RectTransform walkingFox; RectTransform walkingShadow; Vector2 touchDirection; List<string> sentenceTiles = new List<string>(); List<int> selectedTileIndices = new List<int>(); Button[] tileButtons;
+        float feedbackUntil; Challenge current; bool walking; Vector2 walkPosition; RectTransform walkingFox; RectTransform walkingShadow; Image foxImage; Sprite idleFrame; Sprite blinkFrame; Sprite[] walkFrames; float strideClock; RectTransform[] midLayers; RectTransform[] nearLayers; Vector2 touchDirection; List<string> sentenceTiles = new List<string>(); List<int> selectedTileIndices = new List<int>(); Button[] tileButtons;
 
         void Awake()
         {
@@ -24,10 +24,12 @@ namespace WordGarden
             canvas.sortingOrder=1;
             var scaler=c.GetComponent<CanvasScaler>(); scaler.uiScaleMode=CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution=new Vector2(1080,1920); scaler.screenMatchMode=CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.matchWidthOrHeight=.5f;
+            scaler.matchWidthOrHeight=1f; // Keep all answer buttons inside the viewport in landscape.
             root=c.GetComponent<RectTransform>();
             var events = new GameObject("EventSystem",typeof(EventSystem),typeof(StandaloneInputModule)); events.transform.SetParent(transform);
             Application.targetFrameRate=60;
+            idleFrame=Art.Load("fox_idle") ?? Art.Load("fox"); blinkFrame=Art.Load("fox_blink");
+            walkFrames=new[] {Art.Load("fox_walk_0"),Art.Load("fox_walk_1"),Art.Load("fox_walk_2"),Art.Load("fox_walk_1")};
             ShowHome();
         }
         void OnDestroy() { speech.Dispose(); }
@@ -37,25 +39,45 @@ namespace WordGarden
             {
                 Vector2 keys = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
                 Vector2 direction = (keys + touchDirection).normalized;
-                if (direction.sqrMagnitude > .01f)
+                bool moving = direction.sqrMagnitude > .01f;
+                if (moving)
                 {
                     walkPosition += direction * (460f * Time.unscaledDeltaTime);
                     walkPosition.y = Mathf.Clamp(walkPosition.y, -520f, 160f);
                     // The walkable trail gets narrower toward the garden gate.
                     float width = Mathf.Lerp(240f, 95f, Mathf.InverseLerp(-520f, 160f, walkPosition.y));
                     walkPosition.x = Mathf.Clamp(walkPosition.x, -width, width);
-                    walkingFox.anchoredPosition = walkPosition + new Vector2(0, Mathf.Sin(Time.unscaledTime * 14f) * 8f);
-                    if (walkingShadow != null) walkingShadow.anchoredPosition = walkPosition + new Vector2(0,-172);
-                    var scale = walkingFox.localScale; scale.x = direction.x < -.1f ? -1f : direction.x > .1f ? 1f : scale.x;
+                    strideClock += Time.unscaledDeltaTime * 8.5f;
+                    int pose = Mathf.FloorToInt(strideClock) % walkFrames.Length;
+                    if (foxImage != null) foxImage.sprite = walkFrames[pose] ?? idleFrame;
+                    var scale = walkingFox.localScale;
+                    scale.x = direction.x < -.1f ? -1f : direction.x > .1f ? 1f : scale.x;
                     walkingFox.localScale = scale;
-                    if (walkPosition.y >= 145f) { walking = false; touchDirection = Vector2.zero; ShowChallenge(); }
                 }
+                else
+                {
+                    strideClock = 0f;
+                    if (foxImage != null) foxImage.sprite = blinkFrame != null && Time.unscaledTime % 4.8f < .18f ? blinkFrame : idleFrame;
+                }
+                // Animated frames change actual paw and arm poses; breathing remains in idle.
+                float bob = moving ? Mathf.Sin(strideClock * Mathf.PI) * 5f : Mathf.Sin(Time.unscaledTime * 2.5f) * 4f;
+                walkingFox.anchoredPosition = walkPosition + new Vector2(0,bob);
+                float breath = moving ? 1f : 1f + .014f * Mathf.Sin(Time.unscaledTime * 2.5f);
+                walkingFox.localScale = new Vector3(Mathf.Sign(walkingFox.localScale.x)*breath,breath,1f);
+                if (walkingShadow != null)
+                {
+                    walkingShadow.anchoredPosition = walkPosition + new Vector2(0,-172);
+                    walkingShadow.localScale=new Vector3(moving ? 1f+.045f*Mathf.Sin(strideClock*Mathf.PI) : 1f,1f,1f);
+                }
+                MoveGardenLayers();
+                if (moving && walkPosition.y >= 145f) { walking = false; touchDirection = Vector2.zero; ShowChallenge(); }
             }
             if (feedback!=0 && Time.unscaledTime>feedbackUntil)
             {
                 int was=feedback; feedback=0;
                 if (was==1) { if (versus && duel.finished) ShowResult(); else ShowWalk(true); }
-                else ShowWalk(true);
+                else if (versus) { if (duel.finished) ShowResult(); else ShowWalk(true); }
+                else ShowChallenge(); // Retry the same item immediately instead of another long walk.
             }
         }
         static Color Hex(string h) { ColorUtility.TryParseHtmlString(h,out Color c); return c; }
@@ -125,12 +147,30 @@ namespace WordGarden
             Action("Duel",root,"דו קרב על אותו מכשיר",new Vector2(0,-520),new Vector2(800,130),Yellow,Navy,()=>{versus=true;duel=new DuelState();ShowWalk(true);},true,36);
             Label("Limit",root,"הדגמת למידה מקומית • בלי חשבון ובלי פרסומות",new Vector2(0,-745),new Vector2(940,90),26,Cream,true);
         }
+        RectTransform GardenLayer(string name, Vector2 offset)
+        {
+            var frame=Art.Load(name);
+            if(frame==null) return null;
+            var layer=Panel(name,root,offset,new Vector2(1080,1920),Color.white);
+            var image=layer.GetComponent<Image>();image.sprite=frame;image.preserveAspect=false;image.raycastTarget=false;
+            return layer;
+        }
+        void MoveGardenLayers()
+        {
+            float x=walkPosition.x / 240f;
+            float y=Mathf.InverseLerp(-520f,160f,walkPosition.y);
+            if(midLayers != null) foreach(var layer in midLayers)
+                if(layer!=null) layer.anchoredPosition=new Vector2(-x*20f,-y*16f);
+            if(nearLayers != null) foreach(var layer in nearLayers)
+                if(layer!=null) layer.anchoredPosition=new Vector2(-x*55f,-y*43f);
+        }
         void ShowWalk(bool freshStage)
         {
             walking = true; touchDirection = Vector2.zero;
             if (freshStage) walkPosition = new Vector2(0,-510);
             current = versus ? duel.Challenge : learning.Current;
             Clear(false);
+            midLayers=new[] {GardenLayer("garden_mid_left",Vector2.zero),GardenLayer("garden_mid_right",Vector2.zero)};
             Panel("Sky ribbon",root,new Vector2(0,802),new Vector2(1080,310),new Color(.05f,.17f,.20f,.72f),1);
             Label("Walk brand",root,"WORD GARDEN  ✦",new Vector2(0,850),new Vector2(800,65),37,Cream);
             Label("Walk unit",root,versus?$"שחקן {duel.player+1}  •  {current.unit}":current.unit,
@@ -140,10 +180,14 @@ namespace WordGarden
             Panel("Station sign",root,new Vector2(0,160),new Vector2(245,172),Cream,1);
             Label("Station question",root,"?",new Vector2(0,172),new Vector2(160,142),94,Plum);
             Label("Station label",root,"תחנת מילים",new Vector2(0,52),new Vector2(530,70),31,Navy,true);
-            walkingShadow=Panel("Fox shadow",root,walkPosition+new Vector2(0,-172),new Vector2(230,53),new Color(.10f,.11f,.08f,.34f),1);
+            walkingShadow=Panel("Fox shadow",root,walkPosition+new Vector2(0,-172),new Vector2(215,49),new Color(.09f,.13f,.09f,.28f));
+            walkingShadow.GetComponent<Image>().sprite=Art.Load("soft_shadow");
+            walkingShadow.GetComponent<Image>().raycastTarget=false;
             walkingFox=Panel("Walking fox",root,walkPosition,new Vector2(285,360),Color.white);
-            var img=walkingFox.GetComponent<Image>(); img.sprite=Art.Load("fox"); img.preserveAspect=true;
-            img.raycastTarget=false;
+            foxImage=walkingFox.GetComponent<Image>(); foxImage.sprite=idleFrame; foxImage.preserveAspect=true;
+            foxImage.raycastTarget=false; strideClock=0f;
+            nearLayers=new[] {GardenLayer("garden_near_left",Vector2.zero),GardenLayer("garden_near_right",Vector2.zero)};
+            MoveGardenLayers();
             Label("Walk hint",root,"לכו עם החיצים עד לתחנת המילים",new Vector2(0,-635),new Vector2(870,82),33,Cream,true);
             Panel("Controls shade",root,new Vector2(0,-815),new Vector2(1080,290),new Color(.05f,.17f,.20f,.66f),1);
             Direction("Left", "◀",new Vector2(-332,-824),Vector2.left);
@@ -178,7 +222,7 @@ namespace WordGarden
             {
                 Panel("Illustration backing",card,new Vector2(0,35),new Vector2(290,290),Sky,1);
                 var im=Panel("Illustration",card,new Vector2(0,35),new Vector2(270,270),Color.white);
-                var pic=im.GetComponent<Image>();pic.sprite=Art.Load(current.illustration);pic.preserveAspect=true;
+                var pic=im.GetComponent<Image>();pic.sprite=current.illustration=="fox" ? idleFrame : Art.Load(current.illustration);pic.preserveAspect=true;
             }
             else
             {
