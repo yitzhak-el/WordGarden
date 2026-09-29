@@ -12,7 +12,7 @@ namespace WordGarden
             Sky=Hex("#B6E9EE"), Plum=Hex("#645C96"), Yellow=Hex("#FFD56F"), Red=Hex("#F58D81");
         Canvas canvas; RectTransform root; Font font; LearningEngine learning; DuelState duel;
         Speech speech = new Speech(); bool versus; int feedback; string feedbackText;
-        float feedbackUntil; Challenge current; List<string> sentenceTiles = new List<string>(); List<int> selectedTileIndices = new List<int>(); Button[] tileButtons;
+        float feedbackUntil; Challenge current; bool walking; Vector2 walkPosition; RectTransform walkingFox; RectTransform walkingShadow; Vector2 touchDirection; List<string> sentenceTiles = new List<string>(); List<int> selectedTileIndices = new List<int>(); Button[] tileButtons;
 
         void Awake()
         {
@@ -33,11 +33,29 @@ namespace WordGarden
         void OnDestroy() { speech.Dispose(); }
         void Update()
         {
+            if (walking && walkingFox != null)
+            {
+                Vector2 keys = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
+                Vector2 direction = (keys + touchDirection).normalized;
+                if (direction.sqrMagnitude > .01f)
+                {
+                    walkPosition += direction * (460f * Time.unscaledDeltaTime);
+                    walkPosition.y = Mathf.Clamp(walkPosition.y, -520f, 160f);
+                    // The walkable trail gets narrower toward the garden gate.
+                    float width = Mathf.Lerp(240f, 95f, Mathf.InverseLerp(-520f, 160f, walkPosition.y));
+                    walkPosition.x = Mathf.Clamp(walkPosition.x, -width, width);
+                    walkingFox.anchoredPosition = walkPosition + new Vector2(0, Mathf.Sin(Time.unscaledTime * 14f) * 8f);
+                    if (walkingShadow != null) walkingShadow.anchoredPosition = walkPosition + new Vector2(0,-172);
+                    var scale = walkingFox.localScale; scale.x = direction.x < -.1f ? -1f : direction.x > .1f ? 1f : scale.x;
+                    walkingFox.localScale = scale;
+                    if (walkPosition.y >= 145f) { walking = false; touchDirection = Vector2.zero; ShowChallenge(); }
+                }
+            }
             if (feedback!=0 && Time.unscaledTime>feedbackUntil)
             {
                 int was=feedback; feedback=0;
-                if (was==1) { if (versus && duel.finished) ShowResult(); else ShowChallenge(); }
-                else ShowChallenge();
+                if (was==1) { if (versus && duel.finished) ShowResult(); else ShowWalk(true); }
+                else ShowWalk(true);
             }
         }
         static Color Hex(string h) { ColorUtility.TryParseHtmlString(h,out Color c); return c; }
@@ -71,18 +89,18 @@ namespace WordGarden
             b.onClick.AddListener(()=>onClick());Label(name+" label",r,caption,Vector2.zero,size-new Vector2(32,12),px,fg,rtl);
             return b;
         }
-        void Clear()
+        void Clear(bool darken=true)
         {
             for (int i=root.childCount-1;i>=0;i--) Destroy(root.GetChild(i).gameObject);
             // Safe portrait canvas margin. Touch targets remain >= 120 reference px.
-            var backdrop=Panel("Backdrop",root,Vector2.zero,new Vector2(3000,4000),Navy);
+            var backdrop=Panel("Backdrop",root,Vector2.zero,new Vector2(1080,1920),Navy);
             var world=Art.Load("world");
             if (world!=null)
             {
                 var image=backdrop.GetComponent<Image>(); image.sprite=world; image.color=Color.white;
                 image.preserveAspect=false;
             }
-            Panel("Readability veil",root,new Vector2(0,-260),new Vector2(1080,1500),new Color(.045f,.10f,.20f,.58f),1);
+            if (darken) Panel("Readability veil",root,new Vector2(0,-260),new Vector2(1080,1500),new Color(.045f,.10f,.20f,.67f),1);
         }
         void Heading(string badge, string title, string sub)
         {
@@ -94,19 +112,60 @@ namespace WordGarden
         }
         void ShowHome()
         {
-            Clear(); Heading("משחק ולומדים ביחד", "ממלכת המילים", "צעד קטן באנגלית. ניצחון גדול בכל יום.");
-            var card=Panel("Mascot stage",root,new Vector2(0,145),new Vector2(850,470),new Color(.16f,.26f,.42f,.72f),1);
+            walking = false; Clear(false);
+            Panel("Top shade",root,new Vector2(0,725),new Vector2(1080,470),new Color(.05f,.17f,.19f,.65f),1);
+            Heading("משחק ולומדים ביחד", "ממלכת המילים", "יוצאים לטייל, מגלים מילים חדשות.");
+            var card=Panel("Mascot stage",root,new Vector2(0,95),new Vector2(850,430),new Color(.08f,.18f,.23f,.43f),1);
             Panel("Mascot halo",card,new Vector2(0,65),new Vector2(370,370),new Color(1f,.82f,.43f,.48f),1);
-            var tex=Art.Load("fox"); if (tex!=null){var icon=Panel("Fox",card,new Vector2(0,28),new Vector2(385,385),Color.white);var img=icon.GetComponent<Image>();img.sprite=tex;img.preserveAspect=true;}
-            Label("Hook",card,"WORD GARDEN",new Vector2(0,-190),new Vector2(750,70),44,Cream);
-            Label("Status",root,$"{learning.Memory.mastered.Count} מילים ומשימות נלמדו",new Vector2(0,-176),new Vector2(890,80),31,Sky,true);
-            Action("Solo",root,"מסע לימוד",new Vector2(0,-348),new Vector2(800,130),Mint,Navy,()=>{versus=false;ShowChallenge();});
-            Action("Duel",root,"דו קרב על אותו מכשיר",new Vector2(0,-520),new Vector2(800,130),Yellow,Navy,()=>{versus=true;duel=new DuelState();ShowChallenge();},true,36);
+            var tex=Art.Load("fox"); if (tex!=null){var icon=Panel("Fox",card,new Vector2(0,22),new Vector2(340,340),Color.white);var img=icon.GetComponent<Image>();img.sprite=tex;img.preserveAspect=true;}
+            Label("Hook",card,"WORD GARDEN",new Vector2(0,-170),new Vector2(750,70),44,Cream);
+            Panel("Bottom shade",root,new Vector2(0,-510),new Vector2(1080,850),new Color(.06f,.18f,.20f,.68f),1);
+            Label("Status",root,$"{learning.Memory.mastered.Count} מילים ומשימות נלמדו",new Vector2(0,-186),new Vector2(890,80),31,Cream,true);
+            Action("Solo",root,"מסע לימוד",new Vector2(0,-348),new Vector2(800,130),Mint,Navy,()=>{versus=false;ShowWalk(true);});
+            Action("Duel",root,"דו קרב על אותו מכשיר",new Vector2(0,-520),new Vector2(800,130),Yellow,Navy,()=>{versus=true;duel=new DuelState();ShowWalk(true);},true,36);
             Label("Limit",root,"הדגמת למידה מקומית • בלי חשבון ובלי פרסומות",new Vector2(0,-745),new Vector2(940,90),26,Cream,true);
+        }
+        void ShowWalk(bool freshStage)
+        {
+            walking = true; touchDirection = Vector2.zero;
+            if (freshStage) walkPosition = new Vector2(0,-510);
+            current = versus ? duel.Challenge : learning.Current;
+            Clear(false);
+            Panel("Sky ribbon",root,new Vector2(0,802),new Vector2(1080,310),new Color(.05f,.17f,.20f,.72f),1);
+            Label("Walk brand",root,"WORD GARDEN  ✦",new Vector2(0,850),new Vector2(800,65),37,Cream);
+            Label("Walk unit",root,versus?$"שחקן {duel.player+1}  •  {current.unit}":current.unit,
+                new Vector2(0,760),new Vector2(860,80),36,Yellow,true);
+            // The glowing gate marks the next question. Walking is required to reach it.
+            Panel("Station glow",root,new Vector2(0,160),new Vector2(320,250),new Color(1f,.79f,.30f,.35f),1);
+            Panel("Station sign",root,new Vector2(0,160),new Vector2(245,172),Cream,1);
+            Label("Station question",root,"?",new Vector2(0,172),new Vector2(160,142),94,Plum);
+            Label("Station label",root,"תחנת מילים",new Vector2(0,52),new Vector2(530,70),31,Navy,true);
+            walkingShadow=Panel("Fox shadow",root,walkPosition+new Vector2(0,-172),new Vector2(230,53),new Color(.10f,.11f,.08f,.34f),1);
+            walkingFox=Panel("Walking fox",root,walkPosition,new Vector2(285,360),Color.white);
+            var img=walkingFox.GetComponent<Image>(); img.sprite=Art.Load("fox"); img.preserveAspect=true;
+            img.raycastTarget=false;
+            Label("Walk hint",root,"לכו עם החיצים עד לתחנת המילים",new Vector2(0,-635),new Vector2(870,82),33,Cream,true);
+            Panel("Controls shade",root,new Vector2(0,-815),new Vector2(1080,290),new Color(.05f,.17f,.20f,.66f),1);
+            Direction("Left", "◀",new Vector2(-332,-824),Vector2.left);
+            Direction("Right","▶",new Vector2(-110,-824),Vector2.right);
+            Direction("Up", "▲",new Vector2(222,-824),Vector2.up);
+            Direction("Down","▼",new Vector2(440,-824),Vector2.down);
+            Action("Walk home",root,"⌂",new Vector2(-445,830),new Vector2(98,92),Cream,Navy,ShowHome,false,39);
+        }
+        void Direction(string name,string symbol,Vector2 pos,Vector2 direction)
+        {
+            var button=Action(name,root,symbol,pos,new Vector2(174,120),Cream,Navy,()=>{},false,48);
+            var trigger=button.gameObject.AddComponent<EventTrigger>();
+            var down=new EventTrigger.Entry { eventID=EventTriggerType.PointerDown };
+            down.callback.AddListener(_=>touchDirection=direction); trigger.triggers.Add(down);
+            var up=new EventTrigger.Entry { eventID=EventTriggerType.PointerUp };
+            up.callback.AddListener(_=>touchDirection=Vector2.zero); trigger.triggers.Add(up);
+            var exit=new EventTrigger.Entry { eventID=EventTriggerType.PointerExit };
+            exit.callback.AddListener(_=>touchDirection=Vector2.zero); trigger.triggers.Add(exit);
         }
         void ShowChallenge()
         {
-            current=versus?duel.Challenge:learning.Current;
+            walking=false; current=versus?duel.Challenge:learning.Current;
             sentenceTiles.Clear(); selectedTileIndices.Clear();
             Clear(); Heading(current.unit,versus?"דו קרב מילים":"המסע שלי",versus?$"שחקן {duel.player+1} • סיבוב {duel.round+1} מתוך {duel.maxRounds}":"מגלים • מתרגלים • חוזרים");
             Panel("Progress track",root,new Vector2(0,386),new Vector2(820,26),Hex("#547088"),1);
@@ -183,7 +242,7 @@ namespace WordGarden
             Panel("Results card",root,new Vector2(0,125),new Vector2(870,520),Cream,1);
             Label("Score",root,$"{duel.scoreA}  :  {duel.scoreB}",new Vector2(0,170),new Vector2(800,190),115,Plum);
             Label("Players",root,"שחקן 1                 שחקן 2",new Vector2(0,50),new Vector2(850,90),36,Navy,true);
-            Action("Again",root,"עוד משחק",new Vector2(0,-350),new Vector2(800,130),Mint,Navy,()=>{duel=new DuelState();ShowChallenge();});
+            Action("Again",root,"עוד משחק",new Vector2(0,-350),new Vector2(800,130),Mint,Navy,()=>{duel=new DuelState();ShowWalk(true);});
             Action("Back",root,"בחזרה לבית",new Vector2(0,-530),new Vector2(800,130),Yellow,Navy,ShowHome);
         }
     }
