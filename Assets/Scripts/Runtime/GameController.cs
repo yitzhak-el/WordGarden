@@ -10,20 +10,24 @@ namespace WordGarden
     {
         static readonly Color Navy = Hex("#172D42"), Cream=Hex("#FFF7E8"), Mint=Hex("#80E3C3"),
             Sky=Hex("#B6E9EE"), Plum=Hex("#645C96"), Yellow=Hex("#FFD56F"), Red=Hex("#F58D81");
+        bool Wide => Screen.width > Screen.height;
+        bool lastWide;
         Canvas canvas; RectTransform root; Font font; LearningEngine learning; DuelState duel;
+        AudioSource voice;
         Speech speech = new Speech(); bool versus; int feedback; string feedbackText;
         float feedbackUntil; Challenge current; bool walking; Vector2 walkPosition; RectTransform walkingFox; RectTransform walkingShadow; Image foxImage; Sprite idleFrame; Sprite blinkFrame; Sprite[] walkFrames; float strideClock; RectTransform[] midLayers; RectTransform[] nearLayers; Vector2 touchDirection; List<string> sentenceTiles = new List<string>(); List<int> selectedTileIndices = new List<int>(); Button[] tileButtons;
 
         void Awake()
         {
-            learning = new LearningEngine(LearningEngine.Load());
+            voice=gameObject.AddComponent<AudioSource>(); voice.playOnAwake=false; voice.spatialBlend=0f;
+            lastWide=Wide; learning = new LearningEngine(LearningEngine.Load());
             font = Resources.Load<Font>("Fonts/DejaVuSans");
             if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
             var c = new GameObject("Canvas",typeof(RectTransform),typeof(Canvas),typeof(CanvasScaler),typeof(GraphicRaycaster));
             c.transform.SetParent(transform,false); canvas=c.GetComponent<Canvas>(); canvas.renderMode=RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder=1;
             var scaler=c.GetComponent<CanvasScaler>(); scaler.uiScaleMode=CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution=new Vector2(1080,1920); scaler.screenMatchMode=CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.referenceResolution=Wide ? new Vector2(1920,1080) : new Vector2(1080,1920); scaler.screenMatchMode=Wide ? CanvasScaler.ScreenMatchMode.Expand : CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight=1f; // Keep all answer buttons inside the viewport in landscape.
             root=c.GetComponent<RectTransform>();
             var events = new GameObject("EventSystem",typeof(EventSystem),typeof(StandaloneInputModule)); events.transform.SetParent(transform);
@@ -35,6 +39,13 @@ namespace WordGarden
         void OnDestroy() { speech.Dispose(); }
         void Update()
         {
+            if(lastWide != Wide) {
+                lastWide=Wide;
+                var scaler=canvas.GetComponent<CanvasScaler>();
+                scaler.referenceResolution=Wide ? new Vector2(1920,1080) : new Vector2(1080,1920);
+                scaler.screenMatchMode=Wide ? CanvasScaler.ScreenMatchMode.Expand : CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+                if(walking) ShowWalk(false); else if(current!=null && feedback==0 && (versus || !learning.Complete)) ShowChallenge(); else if (!versus && learning.Complete && current!=null) ShowSoloResult(); else ShowHome();
+            }
             if (walking && walkingFox != null)
             {
                 Vector2 keys = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
@@ -61,12 +72,12 @@ namespace WordGarden
                 }
                 // Animated frames change actual paw and arm poses; breathing remains in idle.
                 float bob = moving ? Mathf.Sin(strideClock * Mathf.PI) * 5f : Mathf.Sin(Time.unscaledTime * 2.5f) * 4f;
-                walkingFox.anchoredPosition = walkPosition + new Vector2(0,bob);
+                walkingFox.anchoredPosition = Wide ? new Vector2(walkPosition.x*1.6f,(walkPosition.y+bob)*.53f) : walkPosition + new Vector2(0,bob);
                 float breath = moving ? 1f : 1f + .014f * Mathf.Sin(Time.unscaledTime * 2.5f);
                 walkingFox.localScale = new Vector3(Mathf.Sign(walkingFox.localScale.x)*breath,breath,1f);
                 if (walkingShadow != null)
                 {
-                    walkingShadow.anchoredPosition = walkPosition + new Vector2(0,-172);
+                    walkingShadow.anchoredPosition = Wide ? new Vector2(walkPosition.x*1.6f,walkPosition.y*.53f-145f) : walkPosition + new Vector2(0,-172);
                     walkingShadow.localScale=new Vector3(moving ? 1f+.045f*Mathf.Sin(strideClock*Mathf.PI) : 1f,1f,1f);
                 }
                 MoveGardenLayers();
@@ -75,7 +86,7 @@ namespace WordGarden
             if (feedback!=0 && Time.unscaledTime>feedbackUntil)
             {
                 int was=feedback; feedback=0;
-                if (was==1) { if (versus && duel.finished) ShowResult(); else ShowWalk(true); }
+                if (was==1) { if (versus && duel.finished) ShowResult(); else if (!versus && learning.Complete) ShowSoloResult(); else ShowWalk(true); }
                 else if (versus) { if (duel.finished) ShowResult(); else ShowWalk(true); }
                 else ShowChallenge(); // Retry the same item immediately instead of another long walk.
             }
@@ -91,6 +102,11 @@ namespace WordGarden
         RectTransform Panel(string name, Transform parent, Vector2 pos, Vector2 size, Color color, int radius=0)
         {
             var go=new GameObject(name,typeof(RectTransform),typeof(Image)); go.transform.SetParent(parent,false);
+            if (Wide && !challengeLayout && name != "Backdrop")
+            {
+                pos = new Vector2(pos.x * 1.6f, pos.y * .53f);
+                size = new Vector2(size.x * 1.6f, size.y * .53f);
+            }
             var r=go.GetComponent<RectTransform>(); r.anchorMin=r.anchorMax=new Vector2(.5f,.5f);
             r.sizeDelta=size;r.anchoredPosition=pos;
             var img=go.GetComponent<Image>();img.color=color;if(radius>0) img.sprite=Art.Rounded;img.type=radius>0?Image.Type.Sliced:Image.Type.Simple;
@@ -99,6 +115,10 @@ namespace WordGarden
         Text Label(string name, Transform parent,string text, Vector2 pos,Vector2 size,int px,Color color,bool rtl=false,TextAnchor align=TextAnchor.MiddleCenter)
         {
             var go=new GameObject(name,typeof(RectTransform),typeof(Text));go.transform.SetParent(parent,false);
+            if (Wide && !challengeLayout)
+            {
+                pos=new Vector2(pos.x*1.6f,pos.y*.53f); size=new Vector2(size.x*1.6f,Mathf.Max(size.y*.53f,px*1.3f));
+            }
             var r=go.GetComponent<RectTransform>();r.anchorMin=r.anchorMax=new Vector2(.5f,.5f);r.sizeDelta=size;r.anchoredPosition=pos;
             var t=go.GetComponent<Text>();t.font=font;t.text=rtl?Hebrew(text):text;t.fontSize=px;t.fontStyle=FontStyle.Bold;
             t.color=color;t.alignment=align;t.horizontalOverflow=HorizontalWrapMode.Wrap;t.verticalOverflow=VerticalWrapMode.Truncate;
@@ -108,21 +128,27 @@ namespace WordGarden
         {
             var shadow=Panel(name+" shadow",parent,pos+new Vector2(0,-9),size,new Color(0,.08f,.16f,.17f),1);
             var r=Panel(name,parent,pos,size,bg,1);var b=r.gameObject.AddComponent<Button>(); b.targetGraphic=r.GetComponent<Image>();
-            b.onClick.AddListener(()=>onClick());Label(name+" label",r,caption,Vector2.zero,size-new Vector2(32,12),px,fg,rtl);
+            b.onClick.AddListener(()=>onClick());
+            var labelSize = r.sizeDelta-new Vector2(32,12);
+            bool previous=challengeLayout; challengeLayout=true;
+            var label=Label(name+" label",r,caption,Vector2.zero,labelSize,px,fg,rtl);
+            label.resizeTextForBestFit=true; label.resizeTextMinSize=24; label.resizeTextMaxSize=px;
+            challengeLayout=previous;
             return b;
         }
+        bool challengeLayout;
         void Clear(bool darken=true)
         {
             for (int i=root.childCount-1;i>=0;i--) Destroy(root.GetChild(i).gameObject);
             // Safe portrait canvas margin. Touch targets remain >= 120 reference px.
-            var backdrop=Panel("Backdrop",root,Vector2.zero,new Vector2(1080,1920),Navy);
+            var backdrop=Panel("Backdrop",root,Vector2.zero,Wide ? root.rect.size : new Vector2(1080,1920),Navy);
             var world=Art.Load("world");
             if (world!=null)
             {
                 var image=backdrop.GetComponent<Image>(); image.sprite=world; image.color=Color.white;
                 image.preserveAspect=false;
             }
-            if (darken) Panel("Readability veil",root,new Vector2(0,-260),new Vector2(1080,1500),new Color(.045f,.10f,.20f,.67f),1);
+            if (darken) Panel("Readability veil",root,Wide && challengeLayout ? Vector2.zero : new Vector2(0,-260),Wide && challengeLayout ? root.rect.size : new Vector2(1080,1500),new Color(.045f,.10f,.20f,.67f),1);
         }
         void Heading(string badge, string title, string sub)
         {
@@ -134,7 +160,7 @@ namespace WordGarden
         }
         void ShowHome()
         {
-            walking = false; Clear(false);
+            walking = false; current=null; feedback=0; challengeLayout=false; Clear(false);
             Panel("Top shade",root,new Vector2(0,725),new Vector2(1080,470),new Color(.05f,.17f,.19f,.65f),1);
             Heading("משחק ולומדים ביחד", "ממלכת המילים", "יוצאים לטייל, מגלים מילים חדשות.");
             var card=Panel("Mascot stage",root,new Vector2(0,95),new Vector2(850,430),new Color(.08f,.18f,.23f,.43f),1);
@@ -152,6 +178,7 @@ namespace WordGarden
             var frame=Art.Load(name);
             if(frame==null) return null;
             var layer=Panel(name,root,offset,new Vector2(1080,1920),Color.white);
+            if(Wide) layer.sizeDelta=new Vector2(1920,1080);
             var image=layer.GetComponent<Image>();image.sprite=frame;image.preserveAspect=false;image.raycastTarget=false;
             return layer;
         }
@@ -166,7 +193,8 @@ namespace WordGarden
         }
         void ShowWalk(bool freshStage)
         {
-            walking = true; touchDirection = Vector2.zero;
+            if(!versus && learning.Complete) { ShowSoloResult(); return; }
+            challengeLayout=false; walking = true; touchDirection = Vector2.zero;
             if (freshStage) walkPosition = new Vector2(0,-510);
             current = versus ? duel.Challenge : learning.Current;
             Clear(false);
@@ -184,6 +212,7 @@ namespace WordGarden
             walkingShadow.GetComponent<Image>().sprite=Art.Load("soft_shadow");
             walkingShadow.GetComponent<Image>().raycastTarget=false;
             walkingFox=Panel("Walking fox",root,walkPosition,new Vector2(285,360),Color.white);
+            if(Wide) { walkingFox.sizeDelta=new Vector2(260,330); walkingShadow.sizeDelta=new Vector2(190,42); }
             foxImage=walkingFox.GetComponent<Image>(); foxImage.sprite=idleFrame; foxImage.preserveAspect=true;
             foxImage.raycastTarget=false; strideClock=0f;
             nearLayers=new[] {GardenLayer("garden_near_left",Vector2.zero),GardenLayer("garden_near_right",Vector2.zero)};
@@ -210,6 +239,8 @@ namespace WordGarden
         void ShowChallenge()
         {
             walking=false; current=versus?duel.Challenge:learning.Current;
+            if(Wide) { ShowWideChallenge(); return; }
+            challengeLayout=false;
             sentenceTiles.Clear(); selectedTileIndices.Clear();
             Clear(); Heading(current.unit,versus?"דו קרב מילים":"המסע שלי",versus?$"שחקן {duel.player+1} • סיבוב {duel.round+1} מתוך {duel.maxRounds}":"מגלים • מתרגלים • חוזרים");
             Panel("Progress track",root,new Vector2(0,386),new Vector2(820,26),Hex("#547088"),1);
@@ -230,7 +261,7 @@ namespace WordGarden
             }
             Label("Prompt",card,current.prompt,new Vector2(0,-208),new Vector2(790,74),36,Navy,true);
             Action("Hear",root,"▶  הקש לשמוע",new Vector2(0,-307),new Vector2(560,94),Plum,Cream,()=>{
-                if (!speech.Speak(current.spoken)) Label("Audio fallback",root,current.spoken,new Vector2(0,-377),new Vector2(700,70),34,Yellow);
+                if (!SpeakWord(current.spoken)) Label("Audio fallback",root,current.spoken,new Vector2(0,-377),new Vector2(700,70),34,Yellow);
             },true,30);
             if (current.kind==TaskKind.Sentence)
             {
@@ -254,6 +285,63 @@ namespace WordGarden
             }
             Action("Home",root,"⌂",new Vector2(-429,841),new Vector2(100,95),Hex("#45637B"),Cream,ShowHome,false,40);
         }
+
+        void ShowWideChallenge()
+        {
+            challengeLayout=true; sentenceTiles.Clear(); selectedTileIndices.Clear(); Clear();
+            Label("Brand",root,"WORD GARDEN",new Vector2(-585,470),new Vector2(650,68),46,Mint);
+            Label("Unit",root,current.unit,new Vector2(460,470),new Vector2(900,68),38,Yellow,true);
+            Label("Instruction",root,current.instruction,new Vector2(0,378),new Vector2(1720,100),46,Cream,true);
+            var card=Panel("Challenge card",root,new Vector2(-475,-30),new Vector2(780,610),Cream,1);
+            if(!string.IsNullOrEmpty(current.illustration))
+            {
+                var im=Panel("Illustration",card,new Vector2(0,60),new Vector2(370,370),Color.white);
+                var pic=im.GetComponent<Image>(); pic.sprite=current.illustration=="fox" ? idleFrame : Art.Load(current.illustration); pic.preserveAspect=true;
+            }
+            else Label("Ears",card,"♫",new Vector2(0,60),new Vector2(370,370),155,Plum);
+            Label("Prompt",card,current.prompt,new Vector2(0,-204),new Vector2(730,110),42,Navy,true);
+            Action("Hear",root,"▶  הקש לשמוע",new Vector2(-475,-420),new Vector2(660,115),Plum,Cream,()=>{
+                if(!SpeakWord(current.spoken)) Label("Audio fallback",root,current.spoken,new Vector2(-475,-510),new Vector2(730,65),34,Yellow);
+            },true,42);
+            if(current.kind==TaskKind.Sentence)
+            {
+                Label("Built sentence",root,"Tap words in order",new Vector2(450,230),new Vector2(820,105),43,Cream);
+                tileButtons=new Button[current.choices.Length]; int[] positions={2,0,3,1};
+                for(int i=0;i<current.choices.Length;i++) {
+                    int index=positions[i];
+                    tileButtons[index]=Action("Tile "+index,root,current.choices[index],new Vector2(238+(i%2)*420,55-(i/2)*155),new Vector2(380,126),Mint,Navy,()=>AddWord(index),false,46);
+                }
+                Action("Undo tile",root,"חזור",new Vector2(238,-315),new Vector2(380,118),Sky,Navy,UndoTile,true,42);
+                Action("Submit sentence",root,"בדוק משפט",new Vector2(658,-315),new Vector2(380,118),Yellow,Navy,()=>{if(sentenceTiles.Count==current.choices.Length) Choose(string.Join(" ",sentenceTiles));},true,42);
+            }
+            else for(int i=0;i<current.choices.Length;i++) {
+                string choice=current.choices[i];
+                Action("Choice "+i,root,choice,new Vector2(475,140-i*196),new Vector2(770,150),i%2==0?Mint:Sky,Navy,()=>Choose(choice),false,58);
+            }
+            Action("Home",root,"⌂",new Vector2(-878,472),new Vector2(90,85),Plum,Cream,ShowHome,false,40);
+            Label("Progress label",root,versus ? $"Player {duel.player+1} • Round {duel.round+1}/{duel.maxRounds}" : $"{learning.Memory.lessonsCompleted} / {Curriculum.All.Length}",new Vector2(470,-465),new Vector2(760,70),35,Cream);
+        }
+        bool SpeakWord(string words)
+        {
+            string key=words.Trim().TrimEnd('.').ToLowerInvariant().Replace(" ","-");
+            var clip=Resources.Load<AudioClip>("Audio/"+key);
+            if(clip!=null) { voice.Stop(); voice.clip=clip; voice.Play(); return true; }
+            return speech.Speak(words);
+        }
+        void UndoTile()
+        {
+            if(sentenceTiles.Count==0) return;
+            int last=selectedTileIndices[selectedTileIndices.Count-1]; selectedTileIndices.RemoveAt(selectedTileIndices.Count-1);
+            sentenceTiles.RemoveAt(sentenceTiles.Count-1); tileButtons[last].interactable=true; RefreshTiles();
+        }
+        void ShowSoloResult()
+        {
+            walking=false; challengeLayout=false; Clear();
+            Heading("הגינה פורחת", "כל הכבוד!", "השלמתם את כל תשע המשימות.");
+            Label("Completed words",root,"cat  •  dog  •  fox  •  sun",new Vector2(0,70),new Vector2(950,130),48,Cream);
+            Action("Practice again",root,"נלמד שוב",new Vector2(0,-350),new Vector2(800,130),Mint,Navy,()=>{learning.Restart();learning.Save();ShowWalk(true);});
+            Action("Back",root,"בחזרה לבית",new Vector2(0,-530),new Vector2(800,130),Yellow,Navy,ShowHome);
+        }
         void AddWord(int index)
         {
             if (sentenceTiles.Count>=current.choices.Length) return;
@@ -275,14 +363,14 @@ namespace WordGarden
             feedback=correct?1:2;
             feedbackText=correct?"כל הכבוד!":"כמעט! ננסה שוב עוד רגע";
             feedbackUntil=Time.unscaledTime+1.6f;
-            Panel("Feedback scrim",root,Vector2.zero,new Vector2(1100,1920),new Color(.07f,.17f,.25f,.88f));
+            Panel("Feedback scrim",root,Vector2.zero,Wide ? root.rect.size : new Vector2(1100,1920),new Color(.07f,.17f,.25f,.88f));
             Panel("Feedback card",root,Vector2.zero,new Vector2(850,390),correct?Mint:Yellow,1);
             Label("Feedback",root,feedbackText,new Vector2(0,42),new Vector2(780,125),53,Navy,true);
-            Label("Answer",root,correct?current.answer:"התשובה: "+current.answer,new Vector2(0,-71),new Vector2(800,110),35,Navy,!correct);
+            Label("Answer",root,current.answer,new Vector2(0,-71),new Vector2(800,110),35,Navy);
         }
         void ShowResult()
         {
-            Clear(); Heading("המסע ממשיך", "כל סיבוב מלמד", "לא מפסידים ידע. חוזרים ומצליחים.");
+            challengeLayout=false; Clear(); Heading("המסע ממשיך", "כל סיבוב מלמד", "לא מפסידים ידע. חוזרים ומצליחים.");
             Panel("Results card",root,new Vector2(0,125),new Vector2(870,520),Cream,1);
             Label("Score",root,$"{duel.scoreA}  :  {duel.scoreB}",new Vector2(0,170),new Vector2(800,190),115,Plum);
             Label("Players",root,"שחקן 1                 שחקן 2",new Vector2(0,50),new Vector2(850,90),36,Navy,true);

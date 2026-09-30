@@ -50,6 +50,8 @@ namespace WordGarden
     {
         public MemoryState Memory { get; private set; }
         public LearningEngine(MemoryState memory) { Memory = memory ?? new MemoryState(); }
+        public bool Complete => Memory.lessonsCompleted >= Curriculum.All.Length;
+        public void Restart() { Memory.lessonsCompleted=0; Memory.review.Clear(); Memory.streak=0; }
         public Challenge Current
         {
             get
